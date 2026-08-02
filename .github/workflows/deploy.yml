@@ -1,0 +1,131 @@
+name: Application Compilation & Deployment
+
+# Compiles Docker configurations, pushes updated images to ECR, and deploys
+# them to the EKS cluster via Helm.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: track-system-eks
+  ECR_FRONTEND_REPO: track-system-frontend
+  ECR_BACKEND_REPO: track-system-backend
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Backend - install & lint
+        working-directory: backend
+        run: |
+          npm install
+          npm run lint
+          npm test
+
+      - name: Frontend - install & lint
+        working-directory: frontend
+        run: |
+          npm install
+          npm run lint
+
+  build-and-push:
+    name: Build & Push Docker Images to ECR
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.sha_short }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set short SHA tag
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push backend image
+        working-directory: backend
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG: ${{ steps.vars.outputs.sha_short }}
+        run: |
+          docker build -t "$REGISTRY/$ECR_BACKEND_REPO:$TAG" .
+          docker push "$REGISTRY/$ECR_BACKEND_REPO:$TAG"
+
+      - name: Build & push frontend image
+        working-directory: frontend
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG: ${{ steps.vars.outputs.sha_short }}
+        run: |
+          docker build -t "$REGISTRY/$ECR_FRONTEND_REPO:$TAG" .
+          docker push "$REGISTRY/$ECR_FRONTEND_REPO:$TAG"
+
+  deploy-to-eks:
+    name: Helm Rollout to EKS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.4"
+
+      - name: Resolve ECR registry
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Rolling update: bump the image tag to the new git-sha build and let
+      # Helm/Kubernetes perform the rolling deployment on EKS.
+      - name: Helm upgrade (rolling update)
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          helm upgrade --install track-system ./helm/track-system \
+            --namespace track-system --create-namespace \
+            --set frontend.image.repository="$REGISTRY/$ECR_FRONTEND_REPO" \
+            --set frontend.image.tag="$TAG" \
+            --set backend.image.repository="$REGISTRY/$ECR_BACKEND_REPO" \
+            --set backend.image.tag="$TAG" \
+            --wait --timeout 5m
+
+      - name: Verify rollout
+        run: |
+          kubectl -n track-system rollout status deployment/frontend
+          kubectl -n track-system rollout status deployment/backend

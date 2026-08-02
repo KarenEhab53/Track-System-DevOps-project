@@ -1,0 +1,15 @@
+aws_region   = "us-east-1"
+environment  = "dev"
+name_prefix  = "track-system"
+cluster_name = "track-system-eks"
+
+# vpc_cidr             = "10.0.0.0/16"
+# public_subnet_cidrs  = ["10.0.0.0/24", "10.0.1.0/24"]
+# private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
+
+# Fill these in only after enabling Route 53 (see README):
+# enable_route53   = true
+# hosted_zone_name = "example.com"
+# record_name      = "track-system.example.com"
+# alb_dns_name      = "xxxxxxxx.us-east-1.elb.amazonaws.com"
+# alb_zone_id       = "Z35SXDOTRQ7X7K"

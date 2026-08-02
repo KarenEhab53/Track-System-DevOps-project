@@ -1,0 +1,63 @@
+# --------------------------------------------------------------------------
+# Default values for the track-system chart.
+# The GitHub Actions deploy pipeline overrides frontend.image.tag and
+# backend.image.tag with the git commit SHA via `helm upgrade --set ...`.
+# --------------------------------------------------------------------------
+
+namespace: track-system
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: "REPLACE_WITH_ECR_FRONTEND_REPO_URL"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+backend:
+  replicaCount: 2
+  image:
+    repository: "REPLACE_WITH_ECR_BACKEND_REPO_URL"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    port: 8000
+  resources:
+    requests:
+      cpu: 150m
+      memory: 192Mi
+    limits:
+      cpu: 400m
+      memory: 384Mi
+  env:
+    PORT: "8000"
+
+# Name of the Kubernetes Secret (synced from AWS Secrets Manager by the
+# AWS Secrets Store CSI Driver / External Secrets Operator - see README)
+# that holds DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD keys.
+dbSecretName: db-credentials
+
+devSecretStub:
+  enabled: false
+  dbHost: "localhost"
+  dbPort: "5432"
+  dbName: "tracksystem"
+  dbUser: "postgres"
+  dbPassword: "changeme"
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+  host: "" # e.g. track-system.example.com - leave blank to match any host

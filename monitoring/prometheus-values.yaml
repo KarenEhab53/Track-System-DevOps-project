@@ -1,0 +1,51 @@
+# --------------------------------------------------------------------------
+# Values for the `kube-prometheus-stack` Helm chart (prometheus-community
+# repo), installed into the `monitoring` namespace:
+#
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm install prometheus prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --create-namespace \
+#     -f monitoring/prometheus-values.yaml
+# --------------------------------------------------------------------------
+
+prometheus:
+  prometheusSpec:
+    # Auto-discover ServiceMonitors across all namespaces (so it can find
+    # the backend/frontend ServiceMonitor defined below without needing
+    # namespace/label restrictions).
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 15d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# ServiceMonitor telling Prometheus how to scrape the Node.js backend's
+# /metrics endpoint (exposed via prom-client in backend/src/index.js).
+additionalServiceMonitors:
+  - name: track-system-backend
+    selector:
+      matchLabels:
+        app: backend
+    namespaceSelector:
+      matchNames:
+        - track-system
+    endpoints:
+      - port: http
+        path: /metrics
+        interval: 15s
+        relabelings:
+          - sourceLabels: [__meta_kubernetes_service_name]
+            targetLabel: job
+            replacement: track-system
+
+grafana:
+  enabled: true
+  adminPassword: "changeme" # override via --set grafana.adminPassword=... in real deployments
+  defaultDashboardsEnabled: true
+  service:
+    type: ClusterIP

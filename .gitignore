@@ -1,0 +1,27 @@
+# Node
+node_modules/
+dist/
+npm-debug.log*
+.env
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+.terraform.lock.hcl
+terraform.tfvars
+!terraform.tfvars.example
+
+# Helm
+*.tgz
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+minikube-linux-amd64
+minikube-linux-amd64
